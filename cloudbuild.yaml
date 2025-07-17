@@ -23,5 +23,9 @@ steps:
     - '--max-retries'
     - '1'
 
+substitutions:
+  _ARTIFACT_REGISTRY: 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/resource-collector/resource-collector:latest'
+  _BUCKET_NAME: 'resource-collector'
+
 options:
   logging: CLOUD_LOGGING_ONLY
