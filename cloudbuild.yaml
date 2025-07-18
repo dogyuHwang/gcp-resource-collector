@@ -15,18 +15,30 @@ steps:
     - '--region'
     - 'asia-northeast3'
     - '--set-env-vars'
-    - 'PROJECT_ID=${_$PROJECT_ID},BUCKET_NAME=${_BUCKET_NAME}'
+    - 'PROJECT_ID=${PROJECT_ID},BUCKET_NAME=${_BUCKET_NAME}'
     - '--task-timeout'
     - '1800'
     - '--memory'
     - '1Gi'
     - '--max-retries'
     - '1'
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+    - 'run'
+    - 'jobs'
+    - 'execute'
+    - 'resource-job'
+    - '--region'
+    - 'asia-northeast3'
+    - '--wait'
 
 substitutions:
-  _IMAGE_NAME: 'asia-northeast3-docker.pkg.dev/${_$PROJECT_ID}/cloud-build/resource-collector:latest'
+  _IMAGE_NAME: 'asia-northeast3-docker.pkg.dev/${PROJECT_ID}/cloud-build/resource-collector:${BUILD_ID}'
   _BUCKET_NAME: 'resource-collector'
-  _PROJECT_ID: 'None'
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  substitution_option: 'ALLOW_LOOSE'
+
+timeout: '1200s'

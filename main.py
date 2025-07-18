@@ -15,9 +15,60 @@ class GCPResourceCollector:
         self.snapshot_client = compute_v1.SnapshotsClient()
         self.storage_client = storage.Client()
     
+    def get_machine_specs(self, machine_type):
+        """N2, E2 시리즈 전용 정확한 CPU/메모리 스펙"""
+        
+        # E2 공유 코어 타입들
+        if machine_type == 'e2-micro':
+            return (0.25, 1)
+        elif machine_type == 'e2-small':
+            return (0.5, 2)
+        elif machine_type == 'e2-medium':
+            return (1, 4)
+        
+        # 패턴 기반 계산
+        parts = machine_type.split('-')
+        if len(parts) < 3:
+            return (2, 8)  # 기본값
+            
+        series = parts[0]  # e2, n2
+        type_name = parts[1]  # standard, highmem, highcpu
+        
+        try:
+            cpu_count = int(parts[2])
+        except ValueError:
+            return (2, 8)
+        
+        # N2, E2 시리즈만 처리
+        if series == 'e2':
+            if 'standard' in machine_type:
+                memory_gb = cpu_count * 4     # vCPU당 4GB
+            elif 'highmem' in machine_type:
+                memory_gb = cpu_count * 8     # vCPU당 8GB
+            elif 'highcpu' in machine_type:
+                memory_gb = cpu_count * 1     # vCPU당 1GB
+            else:
+                memory_gb = cpu_count * 4
+                
+        elif series == 'n2':
+            if 'standard' in machine_type:
+                memory_gb = cpu_count * 4     # vCPU당 4GB
+            elif 'highmem' in machine_type:
+                memory_gb = cpu_count * 8     # vCPU당 8GB
+            elif 'highcpu' in machine_type:
+                memory_gb = cpu_count * 1     # vCPU당 1GB
+            else:
+                memory_gb = cpu_count * 4
+        else:
+            # n2, e2가 아닌 시리즈는 무시
+            return None
+        
+        return (cpu_count, memory_gb)
+    
     def get_compute_resources(self):
-        """Compute Engine 인스턴스별 CPU/Memory 집계"""
-        resources = defaultdict(lambda: {'cpu': 0, 'memory': 0})
+        """Compute Engine 인스턴스별 CPU/Memory 집계 (Running/Stopped 구분)"""
+        running_resources = defaultdict(int)
+        stopped_resources = defaultdict(int)
         
         try:
             zones_client = compute_v1.ZonesClient()
@@ -30,47 +81,26 @@ class GCPResourceCollector:
                 )
                 
                 for instance in instances:
+                    machine_type = instance.machine_type.split('/')[-1]
+                    series = machine_type.split('-')[0]
+                    
+                    cpu_count, memory_gb = self.get_machine_specs(machine_type)
+                    
                     if instance.status == 'RUNNING':
-                        machine_type = instance.machine_type.split('/')[-1]
-                        series = machine_type.split('-')[0]
+                        running_resources[f"{series}_cpu"] += cpu_count
+                        running_resources[f"{series}_memory"] += memory_gb
+                    else:  # STOPPED, TERMINATED 등
+                        stopped_resources[f"{series}_cpu"] += cpu_count
+                        stopped_resources[f"{series}_memory"] += memory_gb
                         
-                        if series in ['e2', 'n2', 'n1', 'c2', 'c3']:
-                            if 'micro' in machine_type:
-                                cpu_count = 1
-                                memory_gb = 1
-                            elif 'small' in machine_type:
-                                cpu_count = 1
-                                memory_gb = 1.7
-                            elif 'medium' in machine_type:
-                                cpu_count = 1
-                                memory_gb = 4
-                            else:
-                                parts = machine_type.split('-')
-                                if len(parts) >= 3:
-                                    cpu_count = int(parts[2])
-                                    if 'standard' in machine_type:
-                                        memory_gb = cpu_count * 3.75
-                                    elif 'highmem' in machine_type:
-                                        memory_gb = cpu_count * 6.5
-                                    elif 'highcpu' in machine_type:
-                                        memory_gb = cpu_count * 0.9
-                                    else:
-                                        memory_gb = cpu_count * 4
-                                else:
-                                    cpu_count = 2
-                                    memory_gb = 7.5
-                            
-                            resources[f"{series}_cpu"] += cpu_count
-                            resources[f"{series}_memory"] += memory_gb
-                            
         except Exception as e:
             print(f"Compute Engine 리소스 수집 오류: {e}")
         
-        return dict(resources)
+        return dict(running_resources), dict(stopped_resources)
     
     def get_disk_resources(self):
         """디스크 타입별 용량 집계"""
-        disk_usage = defaultdict(float)
+        disk_usage = defaultdict(int)
         
         try:
             zones_client = compute_v1.ZonesClient()
@@ -84,7 +114,7 @@ class GCPResourceCollector:
                 
                 for disk in disks:
                     disk_type = disk.type.split('/')[-1]
-                    size_gb = disk.size_gb
+                    size_gb = int(disk.size_gb)
                     disk_usage[disk_type] += size_gb
                     
         except Exception as e:
@@ -100,7 +130,7 @@ class GCPResourceCollector:
             snapshots = self.snapshot_client.list(project=self.project_id)
             for snapshot in snapshots:
                 if hasattr(snapshot, 'storage_bytes'):
-                    total_snapshot_gb += snapshot.storage_bytes / (1024**3)
+                    total_snapshot_gb += int(snapshot.storage_bytes / (1024**3))
                     
         except Exception as e:
             print(f"스냅샷 리소스 수집 오류: {e}")
@@ -108,7 +138,7 @@ class GCPResourceCollector:
         return total_snapshot_gb
     
     def get_gcs_usage(self):
-        """GCS 버킷별 용량"""
+        """GCS 버킷별 용량 (GB 단위)"""
         gcs_usage = {}
         total_gcs_gb = 0
         
@@ -121,7 +151,7 @@ class GCPResourceCollector:
                     if blob.size:
                         bucket_size += blob.size
                 
-                bucket_size_gb = bucket_size / (1024**3)
+                bucket_size_gb = int(bucket_size / (1024**3))
                 gcs_usage[bucket.name] = bucket_size_gb
                 total_gcs_gb += bucket_size_gb
                 
@@ -132,47 +162,60 @@ class GCPResourceCollector:
         return gcs_usage
 
 def save_to_excel_gcs(result_data, bucket_name=None):
-    """결과를 엑셀 파일로 GCS에 저장"""
+    """결과를 엑셀 파일로 GCS에 저장 (단일 시트)"""
     if bucket_name is None:
         bucket_name = os.environ.get('BUCKET_NAME')
         if not bucket_name:
             print("ERROR: BUCKET_NAME 환경변수가 설정되지 않았습니다")
             return None
+    
     try:
         storage_client = storage.Client()
         bucket = storage_client.bucket(bucket_name)
         
-        excel_buffer = BytesIO()
+        # 모든 데이터를 하나의 리스트로 정리
+        all_data = []
         
-        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            if result_data['compute_resources']:
-                compute_df = pd.DataFrame([
-                    {'Resource Type': k, 'Value': v} 
-                    for k, v in result_data['compute_resources'].items()
-                ])
-                compute_df.to_excel(writer, sheet_name='Compute_Resources', index=False)
-            
-            if result_data['disk_usage_gb']:
-                disk_df = pd.DataFrame([
-                    {'Disk Type': k, 'Size (GB)': v} 
-                    for k, v in result_data['disk_usage_gb'].items()
-                ])
-                disk_df.to_excel(writer, sheet_name='Disk_Usage', index=False)
-            
-            if result_data['gcs_usage']:
-                gcs_df = pd.DataFrame([
-                    {'Bucket Name': k, 'Size (GB)': v} 
-                    for k, v in result_data['gcs_usage'].items()
-                ])
-                gcs_df.to_excel(writer, sheet_name='GCS_Usage', index=False)
-            
-            summary_data = [
-                ['Project ID', result_data['project_id']],
-                ['Snapshot Total (GB)', result_data['snapshot_total_gb']],
-                ['Collection Time', result_data['timestamp']]
-            ]
-            summary_df = pd.DataFrame(summary_data, columns=['Item', 'Value'])
-            summary_df.to_excel(writer, sheet_name='Summary', index=False)
+        # 프로젝트 정보
+        all_data.append(['Category', 'Resource Type', 'Value', 'Unit'])
+        all_data.append(['Project', 'Project ID', result_data['project_id'], ''])
+        all_data.append(['Project', 'Collection Time', result_data['timestamp'], ''])
+        all_data.append(['', '', '', ''])  # 빈 줄
+        
+        # Running Compute Resources
+        all_data.append(['Running Compute', '', '', ''])
+        for resource_type, value in result_data['running_compute_resources'].items():
+            unit = 'vCPU' if 'cpu' in resource_type else 'GB'
+            all_data.append(['Running Compute', resource_type, value, unit])
+        all_data.append(['', '', '', ''])  # 빈 줄
+        
+        # Stopped Compute Resources
+        all_data.append(['Stopped Compute', '', '', ''])
+        for resource_type, value in result_data['stopped_compute_resources'].items():
+            unit = 'vCPU' if 'cpu' in resource_type else 'GB'
+            all_data.append(['Stopped Compute', resource_type, value, unit])
+        all_data.append(['', '', '', ''])  # 빈 줄
+        
+        # Disk Usage
+        all_data.append(['Disk', '', '', ''])
+        for disk_type, size_gb in result_data['disk_usage_gb'].items():
+            all_data.append(['Disk', disk_type, size_gb, 'GB'])
+        all_data.append(['', '', '', ''])  # 빈 줄
+        
+        # Snapshot
+        all_data.append(['Snapshot', 'Total Snapshots', result_data['snapshot_total_gb'], 'GB'])
+        all_data.append(['', '', '', ''])  # 빈 줄
+        
+        # GCS Usage
+        all_data.append(['GCS', '', '', ''])
+        for bucket_name_item, size_gb in result_data['gcs_usage'].items():
+            all_data.append(['GCS', bucket_name_item, size_gb, 'GB'])
+        
+        # DataFrame 생성 및 엑셀 저장
+        df = pd.DataFrame(all_data)
+        
+        excel_buffer = BytesIO()
+        df.to_excel(excel_buffer, index=False, header=False, engine='openpyxl')
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"gcp_resources_{result_data['project_id']}_{timestamp}.xlsx"
@@ -201,7 +244,7 @@ def main():
         collector = GCPResourceCollector(project_id)
         
         print("Compute Engine 리소스 수집...")
-        compute_resources = collector.get_compute_resources()
+        running_compute, stopped_compute = collector.get_compute_resources()
         
         print("디스크 리소스 수집...")
         disk_resources = collector.get_disk_resources()
@@ -214,7 +257,8 @@ def main():
         
         result = {
             'project_id': project_id,
-            'compute_resources': compute_resources,
+            'running_compute_resources': running_compute,
+            'stopped_compute_resources': stopped_compute,
             'disk_usage_gb': disk_resources,
             'snapshot_total_gb': snapshot_usage,
             'gcs_usage': gcs_usage,
