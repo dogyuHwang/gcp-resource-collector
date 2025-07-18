@@ -9,6 +9,7 @@ steps:
     - 'run'
     - 'jobs'
     - 'replace'
+    - '--job'
     - 'resource-job'
     - '--image'
     - '${_IMAGE_NAME}'
