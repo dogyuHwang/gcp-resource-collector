@@ -1,8 +1,8 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', '${_ARTIFACT_REGISTRY}/resource-collector:latest', '.']
+    args: ['build', '-t', '${_IMAGE_NAME}', '.']
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', '${_ARTIFACT_REGISTRY}/resource-collector:latest']
+    args: ['push', '${_IMAGE_NAME}']
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -11,7 +11,7 @@ steps:
     - 'create'
     - 'resource-job'
     - '--image'
-    - '${_ARTIFACT_REGISTRY}/resource-collector:latest'
+    - '${_IMAGE_NAME}'
     - '--region'
     - 'asia-northeast3'
     - '--set-env-vars'
@@ -24,7 +24,7 @@ steps:
     - '1'
 
 substitutions:
-  _ARTIFACT_REGISTRY: 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-build'
+  _IMAGE_NAME: 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-build/resource-collector:latest'
   _BUCKET_NAME: 'resource-collector'
 
 options:
