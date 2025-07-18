@@ -176,40 +176,40 @@ def save_to_excel_gcs(result_data, bucket_name=None):
         # 모든 데이터를 하나의 리스트로 정리
         all_data = []
         
+        # 헤더
+        all_data.append(['Category', 'Instance/Resource', 'Zone', 'Machine Type', 'Status', 'CPU', 'Memory(GB)', 'PD-Standard(GB)', 'PD-Balanced(GB)', 'PD-SSD(GB)', 'Local-SSD(GB)'])
+        
         # 프로젝트 정보
-        all_data.append(['Category', 'Resource Type', 'Value', 'Unit'])
-        all_data.append(['Project', 'Project ID', result_data['project_id'], ''])
-        all_data.append(['Project', 'Collection Time', result_data['timestamp'], ''])
-        all_data.append(['', '', '', ''])  # 빈 줄
+        all_data.append(['Project Info', result_data['project_id'], '', '', '', '', '', '', '', '', ''])
+        all_data.append(['Collection Time', result_data['timestamp'], '', '', '', '', '', '', '', '', ''])
+        all_data.append(['', '', '', '', '', '', '', '', '', '', ''])  # 빈 줄
         
-        # Running Compute Resources
-        all_data.append(['Running Compute', '', '', ''])
-        for resource_type, value in result_data['running_compute_resources'].items():
-            unit = 'vCPU' if 'cpu' in resource_type else 'GB'
-            all_data.append(['Running Compute', resource_type, value, unit])
-        all_data.append(['', '', '', ''])  # 빈 줄
+        # 인스턴스별 상세 정보
+        for instance in result_data['instances']:
+            all_data.append([
+                'Instance',
+                instance['name'],
+                instance['zone'],
+                instance['machine_type'],
+                instance['status'],
+                instance['cpu'],
+                instance['memory_gb'],
+                instance['disks']['pd-standard'],
+                instance['disks']['pd-balanced'],
+                instance['disks']['pd-ssd'],
+                instance['disks']['local-ssd']
+            ])
         
-        # Stopped Compute Resources
-        all_data.append(['Stopped Compute', '', '', ''])
-        for resource_type, value in result_data['stopped_compute_resources'].items():
-            unit = 'vCPU' if 'cpu' in resource_type else 'GB'
-            all_data.append(['Stopped Compute', resource_type, value, unit])
-        all_data.append(['', '', '', ''])  # 빈 줄
+        all_data.append(['', '', '', '', '', '', '', '', '', '', ''])  # 빈 줄
         
-        # Disk Usage
-        all_data.append(['Disk', '', '', ''])
-        for disk_type, size_gb in result_data['disk_usage_gb'].items():
-            all_data.append(['Disk', disk_type, size_gb, 'GB'])
-        all_data.append(['', '', '', ''])  # 빈 줄
-        
-        # Snapshot
-        all_data.append(['Snapshot', 'Total Snapshots', result_data['snapshot_total_gb'], 'GB'])
-        all_data.append(['', '', '', ''])  # 빈 줄
+        # 스냅샷
+        all_data.append(['Snapshot', 'Total Snapshots', '', '', '', '', result_data['snapshot_total_gb'], '', '', '', ''])
+        all_data.append(['', '', '', '', '', '', '', '', '', '', ''])  # 빈 줄
         
         # GCS Usage
-        all_data.append(['GCS', '', '', ''])
+        all_data.append(['GCS', 'Bucket Name', 'Size(GB)', '', '', '', '', '', '', '', ''])
         for bucket_name_item, size_gb in result_data['gcs_usage'].items():
-            all_data.append(['GCS', bucket_name_item, size_gb, 'GB'])
+            all_data.append(['GCS', bucket_name_item, size_gb, '', '', '', '', '', '', '', ''])
         
         # DataFrame 생성 및 엑셀 저장
         df = pd.DataFrame(all_data)
@@ -244,10 +244,7 @@ def main():
         collector = GCPResourceCollector(project_id)
         
         print("Compute Engine 리소스 수집...")
-        running_compute, stopped_compute = collector.get_compute_resources()
-        
-        print("디스크 리소스 수집...")
-        disk_resources = collector.get_disk_resources()
+        instances = collector.get_compute_resources()
         
         print("스냅샷 리소스 수집...")
         snapshot_usage = collector.get_snapshot_usage()
@@ -257,9 +254,7 @@ def main():
         
         result = {
             'project_id': project_id,
-            'running_compute_resources': running_compute,
-            'stopped_compute_resources': stopped_compute,
-            'disk_usage_gb': disk_resources,
+            'instances': instances,
             'snapshot_total_gb': snapshot_usage,
             'gcs_usage': gcs_usage,
             'timestamp': datetime.utcnow().isoformat()
