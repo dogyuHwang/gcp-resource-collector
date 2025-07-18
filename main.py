@@ -4,7 +4,6 @@ import pandas as pd
 from io import BytesIO
 from google.cloud import compute_v1
 from google.cloud import storage
-from collections import defaultdict
 from datetime import datetime
 
 class GCPResourceCollector:
@@ -66,61 +65,98 @@ class GCPResourceCollector:
         return (cpu_count, memory_gb)
     
     def get_compute_resources(self):
-        """Compute Engine 인스턴스별 CPU/Memory 집계 (Running/Stopped 구분)"""
-        running_resources = defaultdict(int)
-        stopped_resources = defaultdict(int)
+        """인스턴스별 상세 CPU/Memory/Disk 정보 수집"""
+        instances_info = []
         
         try:
             zones_client = compute_v1.ZonesClient()
             zones = zones_client.list(project=self.project_id)
             
             for zone in zones:
+                print(f"Processing zone: {zone.name}")
                 instances = self.compute_client.list(
                     project=self.project_id, 
                     zone=zone.name
                 )
                 
                 for instance in instances:
+                    # 인스턴스 기본 정보 추출
+                    instance_name = instance.name if hasattr(instance, 'name') else 'unknown'
+                    instance_status = instance.status if hasattr(instance, 'status') else 'unknown'
                     machine_type = instance.machine_type.split('/')[-1]
                     series = machine_type.split('-')[0]
                     
-                    cpu_count, memory_gb = self.get_machine_specs(machine_type)
+                    print(f"Processing instance: {instance_name} ({machine_type})")
                     
-                    if instance.status == 'RUNNING':
-                        running_resources[f"{series}_cpu"] += cpu_count
-                        running_resources[f"{series}_memory"] += memory_gb
-                    else:  # STOPPED, TERMINATED 등
-                        stopped_resources[f"{series}_cpu"] += cpu_count
-                        stopped_resources[f"{series}_memory"] += memory_gb
+                    # n2, e2 시리즈만 처리
+                    if series not in ['n2', 'e2']:
+                        print(f"Skipping {series} series")
+                        continue
+                    
+                    specs = self.get_machine_specs(machine_type)
+                    if specs is None:
+                        continue
+                        
+                    cpu_count, memory_gb = specs
+                    
+                    # 인스턴스의 디스크 정보 수집
+                    disks_info = self.get_instance_disks(instance, zone.name)
+                    
+                    instance_data = {
+                        'name': instance_name,
+                        'zone': zone.name,
+                        'machine_type': machine_type,
+                        'status': instance_status,
+                        'cpu': cpu_count,
+                        'memory_gb': memory_gb,
+                        'disks': disks_info
+                    }
+                    
+                    instances_info.append(instance_data)
                         
         except Exception as e:
             print(f"Compute Engine 리소스 수집 오류: {e}")
         
-        return dict(running_resources), dict(stopped_resources)
+        return instances_info
     
-    def get_disk_resources(self):
-        """디스크 타입별 용량 집계"""
-        disk_usage = defaultdict(int)
+    def get_instance_disks(self, instance, zone_name):
+        """인스턴스별 디스크 정보 수집"""
+        disks_info = {
+            'pd-standard': 0,
+            'pd-balanced': 0,
+            'pd-ssd': 0,
+            'local-ssd': 0
+        }
         
         try:
-            zones_client = compute_v1.ZonesClient()
-            zones = zones_client.list(project=self.project_id)
-            
-            for zone in zones:
-                disks = self.disk_client.list(
-                    project=self.project_id,
-                    zone=zone.name
-                )
-                
-                for disk in disks:
-                    disk_type = disk.type.split('/')[-1]
-                    size_gb = int(disk.size_gb)
-                    disk_usage[disk_type] += size_gb
+            if hasattr(instance, 'disks') and instance.disks:
+                for disk in instance.disks:
+                    if hasattr(disk, 'source') and disk.source:
+                        # 영구 디스크인 경우
+                        disk_name = disk.source.split('/')[-1]
+                        try:
+                            disk_detail = self.disk_client.get(
+                                project=self.project_id,
+                                zone=zone_name,
+                                disk=disk_name
+                            )
+                            disk_type = disk_detail.type.split('/')[-1]
+                            size_gb = int(disk_detail.size_gb)
+                            
+                            if disk_type in disks_info:
+                                disks_info[disk_type] += size_gb
+                            
+                        except Exception as e:
+                            print(f"디스크 {disk_name} 정보 수집 오류: {e}")
+                            
+                    elif hasattr(disk, 'type_') and disk.type_ == 'SCRATCH':
+                        # 로컬 SSD인 경우 (보통 375GB 단위)
+                        disks_info['local-ssd'] += 375
                     
         except Exception as e:
-            print(f"디스크 리소스 수집 오류: {e}")
+            print(f"인스턴스 디스크 정보 수집 오류: {e}")
         
-        return dict(disk_usage)
+        return disks_info
     
     def get_snapshot_usage(self):
         """스냅샷 총 용량"""
@@ -129,7 +165,7 @@ class GCPResourceCollector:
         try:
             snapshots = self.snapshot_client.list(project=self.project_id)
             for snapshot in snapshots:
-                if hasattr(snapshot, 'storage_bytes'):
+                if hasattr(snapshot, 'storage_bytes') and snapshot.storage_bytes:
                     total_snapshot_gb += int(snapshot.storage_bytes / (1024**3))
                     
         except Exception as e:
@@ -146,10 +182,15 @@ class GCPResourceCollector:
             buckets = self.storage_client.list_buckets()
             for bucket in buckets:
                 bucket_size = 0
-                blobs = self.storage_client.list_blobs(bucket.name)
-                for blob in blobs:
-                    if blob.size:
-                        bucket_size += blob.size
+                print(f"Processing bucket: {bucket.name}")
+                
+                try:
+                    blobs = self.storage_client.list_blobs(bucket.name)
+                    for blob in blobs:
+                        if hasattr(blob, 'size') and blob.size:
+                            bucket_size += blob.size
+                except Exception as e:
+                    print(f"버킷 {bucket.name} 처리 오류: {e}")
                 
                 bucket_size_gb = int(bucket_size / (1024**3))
                 gcs_usage[bucket.name] = bucket_size_gb
@@ -162,7 +203,7 @@ class GCPResourceCollector:
         return gcs_usage
 
 def save_to_excel_gcs(result_data, bucket_name=None):
-    """결과를 엑셀 파일로 GCS에 저장 (단일 시트)"""
+    """결과를 엑셀 파일로 GCS에 저장"""
     if bucket_name is None:
         bucket_name = os.environ.get('BUCKET_NAME')
         if not bucket_name:
@@ -173,11 +214,14 @@ def save_to_excel_gcs(result_data, bucket_name=None):
         storage_client = storage.Client()
         bucket = storage_client.bucket(bucket_name)
         
-        # 모든 데이터를 하나의 리스트로 정리
+        # 데이터 정리
         all_data = []
         
         # 헤더
-        all_data.append(['Category', 'Instance/Resource', 'Zone', 'Machine Type', 'Status', 'CPU', 'Memory(GB)', 'PD-Standard(GB)', 'PD-Balanced(GB)', 'PD-SSD(GB)', 'Local-SSD(GB)'])
+        headers = ['Category', 'Instance/Resource', 'Zone', 'Machine Type', 'Status', 
+                  'CPU', 'Memory(GB)', 'PD-Standard(GB)', 'PD-Balanced(GB)', 
+                  'PD-SSD(GB)', 'Local-SSD(GB)']
+        all_data.append(headers)
         
         # 프로젝트 정보
         all_data.append(['Project Info', result_data['project_id'], '', '', '', '', '', '', '', '', ''])
@@ -186,24 +230,26 @@ def save_to_excel_gcs(result_data, bucket_name=None):
         
         # 인스턴스별 상세 정보
         for instance in result_data['instances']:
-            all_data.append([
+            row = [
                 'Instance',
-                instance['name'],
-                instance['zone'],
-                instance['machine_type'],
-                instance['status'],
-                instance['cpu'],
-                instance['memory_gb'],
-                instance['disks']['pd-standard'],
-                instance['disks']['pd-balanced'],
-                instance['disks']['pd-ssd'],
-                instance['disks']['local-ssd']
-            ])
+                instance.get('name', 'unknown'),
+                instance.get('zone', ''),
+                instance.get('machine_type', ''),
+                instance.get('status', ''),
+                instance.get('cpu', 0),
+                instance.get('memory_gb', 0),
+                instance.get('disks', {}).get('pd-standard', 0),
+                instance.get('disks', {}).get('pd-balanced', 0),
+                instance.get('disks', {}).get('pd-ssd', 0),
+                instance.get('disks', {}).get('local-ssd', 0)
+            ]
+            all_data.append(row)
         
         all_data.append(['', '', '', '', '', '', '', '', '', '', ''])  # 빈 줄
         
         # 스냅샷
-        all_data.append(['Snapshot', 'Total Snapshots', '', '', '', '', result_data['snapshot_total_gb'], '', '', '', ''])
+        all_data.append(['Snapshot', 'Total Snapshots', '', '', '', '', 
+                        result_data['snapshot_total_gb'], '', '', '', ''])
         all_data.append(['', '', '', '', '', '', '', '', '', '', ''])  # 빈 줄
         
         # GCS Usage
@@ -229,6 +275,8 @@ def save_to_excel_gcs(result_data, bucket_name=None):
         
     except Exception as e:
         print(f"엑셀 파일 저장 오류: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def main():
@@ -245,6 +293,7 @@ def main():
         
         print("Compute Engine 리소스 수집...")
         instances = collector.get_compute_resources()
+        print(f"수집된 인스턴스 수: {len(instances)}")
         
         print("스냅샷 리소스 수집...")
         snapshot_usage = collector.get_snapshot_usage()
@@ -275,6 +324,8 @@ def main():
         
     except Exception as e:
         print(f"ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == '__main__':
     main()
