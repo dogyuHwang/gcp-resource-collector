@@ -230,7 +230,7 @@ def main():
         filename = save_to_excel_gcs(result)
         
         if filename:
-            print(f"✓ 수집 완료: dogyu-test 버킷에 {filename} 저장됨")
+            print(f"✓ 수집 완료: 버킷에 {filename} 저장됨")
         else:
             print("✗ 파일 저장 실패")
         
