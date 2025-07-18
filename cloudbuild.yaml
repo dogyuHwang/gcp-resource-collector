@@ -8,8 +8,7 @@ steps:
     args:
     - 'run'
     - 'jobs'
-    - 'replace'
-    - '--job'
+    - 'update'
     - 'resource-job'
     - '--image'
     - '${_IMAGE_NAME}'
