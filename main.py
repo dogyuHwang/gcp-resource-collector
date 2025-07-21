@@ -207,7 +207,7 @@ class GCPResourceCollector:
         total_gcs_gb = 0.0
         
         try:
-            buckets = self.storage_client.list_buckets()
+            buckets = self.storage_client.list_buckets(project=self.project_id)
             for bucket in buckets:
                 bucket_size_bytes = 0
                 print(f"Processing bucket: {bucket.name}")
