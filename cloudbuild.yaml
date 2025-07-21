@@ -34,7 +34,7 @@ steps:
     - '--wait'
 
 substitutions:
-  _IMAGE_NAME: 'asia-northeast3-docker.pkg.dev/${PROJECT_ID}/cloud-build/resource-collector:${BUILD_ID}'
+  _IMAGE_NAME: 'asia-northeast3-docker.pkg.dev/example-project/cloud-build/resource-collector:${BUILD_ID}'
   _BUCKET_NAME: 'resource-collector'
 
 options:
