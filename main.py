@@ -124,117 +124,117 @@ def get_compute_resources(self):
    
     return instances_info
     
-    def get_instance_disks(self, instance, zone_name):
-        """인스턴스별 디스크 정보 수집 (정확한 계산)"""
-        disks_info = {
-            'pd-standard': 0.0,
-            'pd-balanced': 0.0,
-            'pd-ssd': 0.0,
-            'local-ssd': 0.0
-        }
-        
-        try:
-            if hasattr(instance, 'disks') and instance.disks:
-                for disk in instance.disks:
-                    if hasattr(disk, 'source') and disk.source:
-                        # 영구 디스크인 경우
-                        disk_name = disk.source.split('/')[-1]
-                        try:
-                            disk_detail = self.disk_client.get(
-                                project=self.project_id,
-                                zone=zone_name,
-                                disk=disk_name
-                            )
-                            disk_type = disk_detail.type.split('/')[-1]
-                            
-                            # 정확한 크기 계산 (bytes -> GB)
-                            if hasattr(disk_detail, 'size_gb'):
-                                size_gb = float(disk_detail.size_gb)
-                            elif hasattr(disk_detail, 'size_bytes'):
-                                size_gb = float(disk_detail.size_bytes) / (1024**3)
-                            else:
-                                print(f"디스크 {disk_name} 크기 정보 없음")
-                                continue
-                            
-                            # 반올림하여 소수점 2자리까지
-                            size_gb = round(size_gb, 2)
-                            
-                            if disk_type in disks_info:
-                                disks_info[disk_type] += size_gb
-                            else:
-                                print(f"알 수 없는 디스크 타입: {disk_type}")
-                            
-                        except Exception as e:
-                            print(f"디스크 {disk_name} 정보 수집 오류: {e}")
-                            
-                    elif hasattr(disk, 'type_') and disk.type_ == 'SCRATCH':
-                        # 로컬 SSD인 경우
-                        if hasattr(disk, 'disk_size_gb'):
-                            local_ssd_size = float(disk.disk_size_gb)
-                        else:
-                            # 기본값: 375GB (GCP 로컬 SSD 기본 크기)
-                            local_ssd_size = 375.0
+def get_instance_disks(self, instance, zone_name):
+    """인스턴스별 디스크 정보 수집 (정확한 계산)"""
+    disks_info = {
+        'pd-standard': 0.0,
+        'pd-balanced': 0.0,
+        'pd-ssd': 0.0,
+        'local-ssd': 0.0
+    }
+    
+    try:
+        if hasattr(instance, 'disks') and instance.disks:
+            for disk in instance.disks:
+                if hasattr(disk, 'source') and disk.source:
+                    # 영구 디스크인 경우
+                    disk_name = disk.source.split('/')[-1]
+                    try:
+                        disk_detail = self.disk_client.get(
+                            project=self.project_id,
+                            zone=zone_name,
+                            disk=disk_name
+                        )
+                        disk_type = disk_detail.type.split('/')[-1]
                         
-                        disks_info['local-ssd'] += round(local_ssd_size, 2)
+                        # 정확한 크기 계산 (bytes -> GB)
+                        if hasattr(disk_detail, 'size_gb'):
+                            size_gb = float(disk_detail.size_gb)
+                        elif hasattr(disk_detail, 'size_bytes'):
+                            size_gb = float(disk_detail.size_bytes) / (1024**3)
+                        else:
+                            print(f"디스크 {disk_name} 크기 정보 없음")
+                            continue
+                        
+                        # 반올림하여 소수점 2자리까지
+                        size_gb = round(size_gb, 2)
+                        
+                        if disk_type in disks_info:
+                            disks_info[disk_type] += size_gb
+                        else:
+                            print(f"알 수 없는 디스크 타입: {disk_type}")
+                        
+                    except Exception as e:
+                        print(f"디스크 {disk_name} 정보 수집 오류: {e}")
+                        
+                elif hasattr(disk, 'type_') and disk.type_ == 'SCRATCH':
+                    # 로컬 SSD인 경우
+                    if hasattr(disk, 'disk_size_gb'):
+                        local_ssd_size = float(disk.disk_size_gb)
+                    else:
+                        # 기본값: 375GB (GCP 로컬 SSD 기본 크기)
+                        local_ssd_size = 375.0
                     
-        except Exception as e:
-            print(f"인스턴스 디스크 정보 수집 오류: {e}")
-        
-        # 모든 값을 소수점 2자리로 반올림
-        for key in disks_info:
-            disks_info[key] = round(disks_info[key], 2)
-        
-        return disks_info
-    
-    def get_snapshot_usage(self):
-        """스냅샷 총 용량 (정확한 계산)"""
-        total_snapshot_gb = 0.0
-        
-        try:
-            snapshots = self.snapshot_client.list(project=self.project_id)
-            for snapshot in snapshots:
-                if hasattr(snapshot, 'storage_bytes') and snapshot.storage_bytes:
-                    # bytes를 GB로 정확히 변환
-                    snapshot_gb = float(snapshot.storage_bytes) / (1024**3)
-                    total_snapshot_gb += snapshot_gb
-                elif hasattr(snapshot, 'disk_size_gb') and snapshot.disk_size_gb:
-                    # 이미 GB 단위인 경우
-                    total_snapshot_gb += float(snapshot.disk_size_gb)
-                    
-        except Exception as e:
-            print(f"스냅샷 리소스 수집 오류: {e}")
-        
-        return round(total_snapshot_gb, 2)
-    
-    def get_gcs_usage(self):
-        """GCS 버킷별 용량 (정확한 GB 계산)"""
-        gcs_usage = {}
-        total_gcs_gb = 0.0
-        
-        try:
-            buckets = self.storage_client.list_buckets(project=self.project_id)
-            for bucket in buckets:
-                bucket_size_bytes = 0
-                print(f"Processing bucket: {bucket.name}")
+                    disks_info['local-ssd'] += round(local_ssd_size, 2)
                 
-                try:
-                    blobs = self.storage_client.list_blobs(bucket.name)
-                    for blob in blobs:
-                        if hasattr(blob, 'size') and blob.size:
-                            bucket_size_bytes += int(blob.size)
-                except Exception as e:
-                    print(f"버킷 {bucket.name} 처리 오류: {e}")
-                
+    except Exception as e:
+        print(f"인스턴스 디스크 정보 수집 오류: {e}")
+    
+    # 모든 값을 소수점 2자리로 반올림
+    for key in disks_info:
+        disks_info[key] = round(disks_info[key], 2)
+    
+    return disks_info
+
+def get_snapshot_usage(self):
+    """스냅샷 총 용량 (정확한 계산)"""
+    total_snapshot_gb = 0.0
+    
+    try:
+        snapshots = self.snapshot_client.list(project=self.project_id)
+        for snapshot in snapshots:
+            if hasattr(snapshot, 'storage_bytes') and snapshot.storage_bytes:
                 # bytes를 GB로 정확히 변환
-                bucket_size_gb = round(float(bucket_size_bytes) / (1024**3), 2)
-                gcs_usage[bucket.name] = bucket_size_gb
-                total_gcs_gb += bucket_size_gb
+                snapshot_gb = float(snapshot.storage_bytes) / (1024**3)
+                total_snapshot_gb += snapshot_gb
+            elif hasattr(snapshot, 'disk_size_gb') and snapshot.disk_size_gb:
+                # 이미 GB 단위인 경우
+                total_snapshot_gb += float(snapshot.disk_size_gb)
                 
-        except Exception as e:
-            print(f"GCS 리소스 수집 오류: {e}")
-        
-        gcs_usage['total_gcs_gb'] = round(total_gcs_gb, 2)
-        return gcs_usage
+    except Exception as e:
+        print(f"스냅샷 리소스 수집 오류: {e}")
+    
+    return round(total_snapshot_gb, 2)
+
+def get_gcs_usage(self):
+    """GCS 버킷별 용량 (정확한 GB 계산)"""
+    gcs_usage = {}
+    total_gcs_gb = 0.0
+    
+    try:
+        buckets = self.storage_client.list_buckets(project=self.project_id)
+        for bucket in buckets:
+            bucket_size_bytes = 0
+            print(f"Processing bucket: {bucket.name}")
+            
+            try:
+                blobs = self.storage_client.list_blobs(bucket.name)
+                for blob in blobs:
+                    if hasattr(blob, 'size') and blob.size:
+                        bucket_size_bytes += int(blob.size)
+            except Exception as e:
+                print(f"버킷 {bucket.name} 처리 오류: {e}")
+            
+            # bytes를 GB로 정확히 변환
+            bucket_size_gb = round(float(bucket_size_bytes) / (1024**3), 2)
+            gcs_usage[bucket.name] = bucket_size_gb
+            total_gcs_gb += bucket_size_gb
+            
+    except Exception as e:
+        print(f"GCS 리소스 수집 오류: {e}")
+    
+    gcs_usage['total_gcs_gb'] = round(total_gcs_gb, 2)
+    return gcs_usage
 
 def save_to_excel_gcs(result_data, bucket_name=None):
     """결과를 엑셀 파일로 GCS에 저장"""
