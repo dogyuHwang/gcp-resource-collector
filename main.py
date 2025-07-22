@@ -30,7 +30,7 @@ class GCPResourceCollector:
         if len(parts) < 3:
             return (2, 8)  # 기본값
             
-        custom_memory = parts[-1]
+        custom_memory = int(parts[-1])
         
         try:
             cpu_count = int(parts[2])
