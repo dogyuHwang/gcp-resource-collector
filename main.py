@@ -112,8 +112,8 @@ class GCPResourceCollector:
                         'status': instance_status,
                         'cpu': cpu_count,
                         'memory_gb': memory_gb,
-                        'private_ips': ', '.join(private_ips) if private_ips else 'None',
-                        'public_ips': ', '.join(public_ips) if public_ips else 'None',
+                        'private_ip': ', '.join(private_ips) if private_ips else 'None',
+                        'public_ip': ', '.join(public_ips) if public_ips else 'None',
                         'disks': disks_info
                     }
                 
