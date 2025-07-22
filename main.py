@@ -30,37 +30,24 @@ class GCPResourceCollector:
         if len(parts) < 3:
             return (2, 8)  # 기본값
             
-        series = parts[0]  # e2, n2
-        type_name = parts[1]  # standard, highmem, highcpu
+        custom_memory = parts[-1]
         
         try:
             cpu_count = int(parts[2])
         except ValueError:
             return (2, 8)
         
-        # N2, E2 시리즈만 처리
-        if series == 'e2':
-            if 'standard' in machine_type:
-                memory_gb = cpu_count * 4     # vCPU당 4GB
-            elif 'highmem' in machine_type:
-                memory_gb = cpu_count * 8     # vCPU당 8GB
-            elif 'highcpu' in machine_type:
-                memory_gb = cpu_count * 1     # vCPU당 1GB
-            else:
-                memory_gb = cpu_count * 4
-                
-        elif series == 'n2':
-            if 'standard' in machine_type:
-                memory_gb = cpu_count * 4     # vCPU당 4GB
-            elif 'highmem' in machine_type:
-                memory_gb = cpu_count * 8     # vCPU당 8GB
-            elif 'highcpu' in machine_type:
-                memory_gb = cpu_count * 1     # vCPU당 1GB
-            else:
-                memory_gb = cpu_count * 4
+        if 'standard' in machine_type:
+            memory_gb = cpu_count * 4     # vCPU당 4GB
+        elif 'highmem' in machine_type:
+            memory_gb = cpu_count * 8     # vCPU당 8GB
+        elif 'highcpu' in machine_type:
+            memory_gb = cpu_count * 1     # vCPU당 1GB
+        elif 'custom' in machine_type:
+            memory_gb = custom_memory / 1024     # Custom memory 계산
         else:
-            # n2, e2가 아닌 시리즈는 무시
-            return None
+            memory_gb = cpu_count * 4
+            
         
         return (cpu_count, memory_gb)
     
