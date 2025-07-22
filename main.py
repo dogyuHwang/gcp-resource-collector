@@ -51,78 +51,78 @@ class GCPResourceCollector:
         
         return (cpu_count, memory_gb)
     
-def get_compute_resources(self):
-    """인스턴스별 상세 CPU/Memory/Disk/IP 정보 수집"""
-    instances_info = []
-   
-    try:
-        zones_client = compute_v1.ZonesClient()
-        zones = zones_client.list(project=self.project_id)
-       
-        for zone in zones:
-            print(f"Processing zone: {zone.name}")
-            instances = self.compute_client.list(
-                project=self.project_id,
-                zone=zone.name
-            )
-           
-            for instance in instances:
-                # 인스턴스 기본 정보 추출
-                instance_name = instance.name if hasattr(instance, 'name') else 'unknown'
-                instance_status = instance.status if hasattr(instance, 'status') else 'unknown'
-                machine_type = instance.machine_type.split('/')[-1]
-                series = machine_type.split('-')[0]
-               
-                print(f"Processing instance: {instance_name} ({machine_type})")
-               
-                # n2, e2 시리즈만 처리
-                if series not in ['n2', 'e2']:
-                    print(f"Skipping {series} series")
-                    continue
-               
-                specs = self.get_machine_specs(machine_type)
-                if specs is None:
-                    continue
-                   
-                cpu_count, memory_gb = specs
-               
-                # IP 주소 정보 수집
-                private_ips = []
-                public_ips = []
+    def get_compute_resources(self):
+        """인스턴스별 상세 CPU/Memory/Disk/IP 정보 수집"""
+        instances_info = []
+    
+        try:
+            zones_client = compute_v1.ZonesClient()
+            zones = zones_client.list(project=self.project_id)
+        
+            for zone in zones:
+                print(f"Processing zone: {zone.name}")
+                instances = self.compute_client.list(
+                    project=self.project_id,
+                    zone=zone.name
+                )
+            
+                for instance in instances:
+                    # 인스턴스 기본 정보 추출
+                    instance_name = instance.name if hasattr(instance, 'name') else 'unknown'
+                    instance_status = instance.status if hasattr(instance, 'status') else 'unknown'
+                    machine_type = instance.machine_type.split('/')[-1]
+                    series = machine_type.split('-')[0]
                 
-                if hasattr(instance, 'network_interfaces') and instance.network_interfaces:
-                    for network_interface in instance.network_interfaces:
-                        # Private IP 수집
-                        if hasattr(network_interface, 'network_i_p') and network_interface.network_i_p:
-                            private_ips.append(network_interface.network_i_p)
-                        
-                        # Public IP 수집 (External IP)
-                        if hasattr(network_interface, 'access_configs') and network_interface.access_configs:
-                            for access_config in network_interface.access_configs:
-                                if hasattr(access_config, 'nat_i_p') and access_config.nat_i_p:
-                                    public_ips.append(access_config.nat_i_p)
-               
-                # 인스턴스의 디스크 정보 수집
-                disks_info = self.get_instance_disks(instance, zone.name)
-               
-                instance_data = {
-                    'name': instance_name,
-                    'zone': zone.name,
-                    'machine_type': machine_type,
-                    'status': instance_status,
-                    'cpu': cpu_count,
-                    'memory_gb': memory_gb,
-                    'private_ips': ', '.join(private_ips) if private_ips else 'None',
-                    'public_ips': ', '.join(public_ips) if public_ips else 'None',
-                    'disks': disks_info
-                }
-               
-                instances_info.append(instance_data)
-                   
-    except Exception as e:
-        print(f"Compute Engine 리소스 수집 오류: {e}")
-   
-    return instances_info
+                    print(f"Processing instance: {instance_name} ({machine_type})")
+                
+                    # n2, e2 시리즈만 처리
+                    if series not in ['n2', 'e2']:
+                        print(f"Skipping {series} series")
+                        continue
+                
+                    specs = self.get_machine_specs(machine_type)
+                    if specs is None:
+                        continue
+                    
+                    cpu_count, memory_gb = specs
+                
+                    # IP 주소 정보 수집
+                    private_ips = []
+                    public_ips = []
+                    
+                    if hasattr(instance, 'network_interfaces') and instance.network_interfaces:
+                        for network_interface in instance.network_interfaces:
+                            # Private IP 수집
+                            if hasattr(network_interface, 'network_i_p') and network_interface.network_i_p:
+                                private_ips.append(network_interface.network_i_p)
+                            
+                            # Public IP 수집 (External IP)
+                            if hasattr(network_interface, 'access_configs') and network_interface.access_configs:
+                                for access_config in network_interface.access_configs:
+                                    if hasattr(access_config, 'nat_i_p') and access_config.nat_i_p:
+                                        public_ips.append(access_config.nat_i_p)
+                
+                    # 인스턴스의 디스크 정보 수집
+                    disks_info = self.get_instance_disks(instance, zone.name)
+                
+                    instance_data = {
+                        'name': instance_name,
+                        'zone': zone.name,
+                        'machine_type': machine_type,
+                        'status': instance_status,
+                        'cpu': cpu_count,
+                        'memory_gb': memory_gb,
+                        'private_ips': ', '.join(private_ips) if private_ips else 'None',
+                        'public_ips': ', '.join(public_ips) if public_ips else 'None',
+                        'disks': disks_info
+                    }
+                
+                    instances_info.append(instance_data)
+                    
+        except Exception as e:
+            print(f"Compute Engine 리소스 수집 오류: {e}")
+    
+        return instances_info
     
 def get_instance_disks(self, instance, zone_name):
     """인스턴스별 디스크 정보 수집 (정확한 계산)"""
