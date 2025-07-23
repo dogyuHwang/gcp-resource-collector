@@ -88,16 +88,12 @@ class GCPResourceCollector:
                 
                     # IP 주소 정보 수집 (여러 가능한 속성명 시도)
                     private_ips = []
-                    public_ips = []
                     
                     for network_interface in instance.network_interfaces:
                         # Private IP 수집 (가능한 모든 속성명 시도)
                         private_ip = None
-                        for attr in ['network_ip', 'network_i_p', 'networkIP', 'internal_ip']:
-                            if hasattr(network_interface, attr):
-                                private_ip = getattr(network_interface, attr)
-                                if private_ip:
-                                    break
+                        if hasattr(network_interface, "network_i_p"):
+                            private_ip = getattr(network_interface, "network_i_p")
                         
                         if private_ip:
                             private_ips.append(private_ip)
@@ -105,14 +101,10 @@ class GCPResourceCollector:
                     # Public IP 수집 (External IP)
                         for access_config in network_interface.access_configs:
                             public_ip = None
-                            for attr in ['nat_ip', 'nat_i_p', 'natIP', 'external_ip']:
-                                if hasattr(access_config, attr):
-                                    public_ip = getattr(access_config, attr)
-                                    if public_ip:
-                                        break
-                            
-                            if public_ip:
-                                public_ips.append(public_ip)
+                            if hasattr(access_config, "nat_i_p"):
+                                public_ip = getattr(access_config, "nat_i_p")
+                    print(private_ips)
+                    print(public_ip)
                 
                     # 인스턴스의 디스크 정보 수집
                     disks_info = self.get_instance_disks(instance, zone.name)
@@ -125,7 +117,7 @@ class GCPResourceCollector:
                         'cpu': cpu_count,
                         'memory_gb': memory_gb,
                         'private_ip': ', '.join(private_ips) if private_ips else 'None',
-                        'public_ip': ', '.join(public_ips) if public_ips else 'None',
+                        'public_ip': public_ip,
                         'disks': disks_info
                     }
                 
