@@ -60,6 +60,7 @@ class GCPResourceCollector:
             zones = zones_client.list(project=self.project_id)
         
             for zone in zones:
+                print(f"Processing zone: {zone.name}")
                 instances = self.compute_client.list(
                     project=self.project_id,
                     zone=zone.name
@@ -87,21 +88,42 @@ class GCPResourceCollector:
                 
                     # IP 주소 정보 수집 (여러 가능한 속성명 시도)
                     private_ips = []
-                    private_ip = None
-                    public_ip = None
+                    public_ips = []
                     
-                    for network_interface in instance.network_interfaces:                                          
-                        if hasattr(network_interface, "network_i_p"):
-                            private_ip = getattr(network_interface, "network_i_p")                        
-                        if private_ip:
-                            private_ips.append(private_ip)
-                        # Public IP 수집 (External IP)                        
-                        if hasattr(network_interface.access_configs, "nat_i_p"):
-                            print(network_interface.access_configs)
-                            print(network_interface.access_configs["nat_i_p"])                            
-                            public_ip = getattr(network_interface.access_configs, "nat_i_p")
-                    print(private_ips)
-                    print(public_ip)
+                    if hasattr(instance, 'network_interfaces') and instance.network_interfaces:
+                        for network_interface in instance.network_interfaces:
+                            # Private IP 수집 (가능한 모든 속성명 시도)
+                            private_ip = None
+                            for attr in ['network_ip', 'network_i_p', 'networkIP', 'internal_ip']:
+                                if hasattr(network_interface, attr):
+                                    private_ip = getattr(network_interface, attr)
+                                    if private_ip:
+                                        break
+                            
+                            if private_ip:
+                                private_ips.append(private_ip)
+                            
+                            # Public IP 수집 (External IP)
+                            if hasattr(network_interface, 'access_configs') and network_interface.access_configs:
+                                for access_config in network_interface.access_configs:
+                                    public_ip = None
+                                    for attr in ['nat_ip', 'nat_i_p', 'natIP', 'external_ip']:
+                                        if hasattr(access_config, attr):
+                                            public_ip = getattr(access_config, attr)
+                                            if public_ip:
+                                                break
+                                    
+                                    if public_ip:
+                                        public_ips.append(public_ip)
+                    
+                    # 디버깅용: 네트워크 인터페이스 구조 출력
+                    if hasattr(instance, 'network_interfaces') and instance.network_interfaces:
+                        print(f"Debug - Instance {instance_name} network interfaces:")
+                        for i, ni in enumerate(instance.network_interfaces):
+                            print(f"  Interface {i}: {[attr for attr in dir(ni) if not attr.startswith('_')]}")
+                            if hasattr(ni, 'access_configs') and ni.access_configs:
+                                for j, ac in enumerate(ni.access_configs):
+                                    print(f"    Access config {j}: {[attr for attr in dir(ac) if not attr.startswith('_')]}")
                 
                     # 인스턴스의 디스크 정보 수집
                     disks_info = self.get_instance_disks(instance, zone.name)
@@ -114,7 +136,7 @@ class GCPResourceCollector:
                         'cpu': cpu_count,
                         'memory_gb': memory_gb,
                         'private_ip': ', '.join(private_ips) if private_ips else 'None',
-                        'public_ip': public_ip,
+                        'public_ip': ', '.join(public_ips) if public_ips else 'None',
                         'disks': disks_info
                     }
                 
@@ -216,6 +238,7 @@ class GCPResourceCollector:
             buckets = self.storage_client.list_buckets(project=self.project_id)
             for bucket in buckets:
                 bucket_size_bytes = 0
+                print(f"Processing bucket: {bucket.name}")
                 
                 try:
                     blobs = self.storage_client.list_blobs(bucket.name)
@@ -345,7 +368,11 @@ def main():
             'timestamp': datetime.utcnow().isoformat()
         }
         
-        print("=" * 50)        
+        print("=" * 50)
+        print("GCP 리소스 수집 결과")
+        print("=" * 50)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        
         print("\nGCS에 엑셀 파일 저장 중...")
         filename = save_to_excel_gcs(result)
         
