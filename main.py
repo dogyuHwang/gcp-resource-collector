@@ -90,8 +90,7 @@ class GCPResourceCollector:
                     private_ip = None
                     public_ip = None
                     
-                    for network_interface in instance.network_interfaces:
-                        print(network_interface)                        
+                    for network_interface in instance.network_interfaces:                                          
                         if hasattr(network_interface, "network_i_p"):
                             private_ip = getattr(network_interface, "network_i_p")                        
                         if private_ip:
@@ -99,6 +98,7 @@ class GCPResourceCollector:
                         
                     # Public IP 수집 (External IP)                        
                         if hasattr(network_interface.access_configs, "nat_i_p"):
+                            print(network_interface)
                             public_ip = getattr(network_interface.access_configs, "nat_i_p")
                     print(private_ips)
                     print(public_ip)
