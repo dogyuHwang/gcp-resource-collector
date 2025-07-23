@@ -89,6 +89,8 @@ class GCPResourceCollector:
                     # IP 주소 정보 수집 (여러 가능한 속성명 시도)
                     private_ips = []
                     public_ips = []
+                    print(instance.network_interfaces)
+                    break
                     
                     if hasattr(instance, 'network_interfaces') and instance.network_interfaces:
                         for network_interface in instance.network_interfaces:
@@ -374,12 +376,12 @@ def main():
         print(json.dumps(result, indent=2, ensure_ascii=False))
         
         print("\nGCS에 엑셀 파일 저장 중...")
-        filename = save_to_excel_gcs(result)
+        # filename = save_to_excel_gcs(result)
         
-        if filename:
-            print(f"✓ 수집 완료: 버킷에 {filename} 저장됨")
-        else:
-            print("✗ 파일 저장 실패")
+        # if filename:
+        #     print(f"✓ 수집 완료: 버킷에 {filename} 저장됨")
+        # else:
+        #     print("✗ 파일 저장 실패")
         
     except Exception as e:
         print(f"ERROR: {str(e)}")
