@@ -60,7 +60,6 @@ class GCPResourceCollector:
             zones = zones_client.list(project=self.project_id)
         
             for zone in zones:
-                print(f"Processing zone: {zone.name}")
                 instances = self.compute_client.list(
                     project=self.project_id,
                     zone=zone.name
@@ -92,8 +91,7 @@ class GCPResourceCollector:
                     public_ip = None
                     
                     for network_interface in instance.network_interfaces:
-                        # Private IP 수집 (가능한 모든 속성명 시도)
-                        
+                        print(network_interface)                        
                         if hasattr(network_interface, "network_i_p"):
                             private_ip = getattr(network_interface, "network_i_p")                        
                         if private_ip:
@@ -218,7 +216,6 @@ class GCPResourceCollector:
             buckets = self.storage_client.list_buckets(project=self.project_id)
             for bucket in buckets:
                 bucket_size_bytes = 0
-                print(f"Processing bucket: {bucket.name}")
                 
                 try:
                     blobs = self.storage_client.list_blobs(bucket.name)
@@ -348,11 +345,7 @@ def main():
             'timestamp': datetime.utcnow().isoformat()
         }
         
-        print("=" * 50)
-        print("GCP 리소스 수집 결과")
-        print("=" * 50)
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        
+        print("=" * 50)        
         print("\nGCS에 엑셀 파일 저장 중...")
         filename = save_to_excel_gcs(result)
         
