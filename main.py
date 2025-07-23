@@ -88,21 +88,20 @@ class GCPResourceCollector:
                 
                     # IP 주소 정보 수집 (여러 가능한 속성명 시도)
                     private_ips = []
+                    private_ip = None
+                    public_ip = None
                     
                     for network_interface in instance.network_interfaces:
                         # Private IP 수집 (가능한 모든 속성명 시도)
-                        private_ip = None
-                        if hasattr(network_interface, "network_i_p"):
-                            private_ip = getattr(network_interface, "network_i_p")
                         
+                        if hasattr(network_interface, "network_i_p"):
+                            private_ip = getattr(network_interface, "network_i_p")                        
                         if private_ip:
                             private_ips.append(private_ip)
                         
-                    # Public IP 수집 (External IP)
-                        for access_config in network_interface.access_configs:
-                            public_ip = None
-                            if hasattr(access_config, "nat_i_p"):
-                                public_ip = getattr(access_config, "nat_i_p")
+                    # Public IP 수집 (External IP)                        
+                        if hasattr(network_interface, "nat_i_p"):
+                            public_ip = getattr(network_interface, "nat_i_p")
                     print(private_ips)
                     print(public_ip)
                 
