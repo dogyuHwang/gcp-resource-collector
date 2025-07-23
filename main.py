@@ -89,43 +89,32 @@ class GCPResourceCollector:
                     # IP 주소 정보 수집 (여러 가능한 속성명 시도)
                     private_ips = []
                     public_ips = []
-                    print(instance.network_interfaces)
+                    print(instance.network_interfaces["network_i_p"])
                     break
                     
-                    if hasattr(instance, 'network_interfaces') and instance.network_interfaces:
-                        for network_interface in instance.network_interfaces:
-                            # Private IP 수집 (가능한 모든 속성명 시도)
-                            private_ip = None
-                            for attr in ['network_ip', 'network_i_p', 'networkIP', 'internal_ip']:
-                                if hasattr(network_interface, attr):
-                                    private_ip = getattr(network_interface, attr)
-                                    if private_ip:
+                    for network_interface in instance.network_interfaces:
+                        # Private IP 수집 (가능한 모든 속성명 시도)
+                        private_ip = None
+                        for attr in ['network_ip', 'network_i_p', 'networkIP', 'internal_ip']:
+                            if hasattr(network_interface, attr):
+                                private_ip = getattr(network_interface, attr)
+                                if private_ip:
+                                    break
+                        
+                        if private_ip:
+                            private_ips.append(private_ip)
+                        
+                    # Public IP 수집 (External IP)
+                        for access_config in network_interface.access_configs:
+                            public_ip = None
+                            for attr in ['nat_ip', 'nat_i_p', 'natIP', 'external_ip']:
+                                if hasattr(access_config, attr):
+                                    public_ip = getattr(access_config, attr)
+                                    if public_ip:
                                         break
                             
-                            if private_ip:
-                                private_ips.append(private_ip)
-                            
-                            # Public IP 수집 (External IP)
-                            if hasattr(network_interface, 'access_configs') and network_interface.access_configs:
-                                for access_config in network_interface.access_configs:
-                                    public_ip = None
-                                    for attr in ['nat_ip', 'nat_i_p', 'natIP', 'external_ip']:
-                                        if hasattr(access_config, attr):
-                                            public_ip = getattr(access_config, attr)
-                                            if public_ip:
-                                                break
-                                    
-                                    if public_ip:
-                                        public_ips.append(public_ip)
-                    
-                    # 디버깅용: 네트워크 인터페이스 구조 출력
-                    if hasattr(instance, 'network_interfaces') and instance.network_interfaces:
-                        print(f"Debug - Instance {instance_name} network interfaces:")
-                        for i, ni in enumerate(instance.network_interfaces):
-                            print(f"  Interface {i}: {[attr for attr in dir(ni) if not attr.startswith('_')]}")
-                            if hasattr(ni, 'access_configs') and ni.access_configs:
-                                for j, ac in enumerate(ni.access_configs):
-                                    print(f"    Access config {j}: {[attr for attr in dir(ac) if not attr.startswith('_')]}")
+                            if public_ip:
+                                public_ips.append(public_ip)
                 
                     # 인스턴스의 디스크 정보 수집
                     disks_info = self.get_instance_disks(instance, zone.name)
