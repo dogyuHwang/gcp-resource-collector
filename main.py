@@ -96,7 +96,7 @@ class GCPResourceCollector:
                         if private_ip:
                             private_ips.append(private_ip)
                         # Public IP 수집 (External IP)                        
-                        if hasattr(network_interface, "access_configs"):
+                        if hasattr(network_interface.access_configs, "nat_i_p"):
                             print(network_interface.access_configs)
                             print(network_interface.access_configs["nat_i_p"])                            
                             public_ip = getattr(network_interface.access_configs, "nat_i_p")
