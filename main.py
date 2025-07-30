@@ -52,7 +52,7 @@ class GCPResourceCollector:
         return (cpu_count, memory_gb)
     
     def get_compute_resources(self):
-        """인스턴스별 상세 CPU/Memory/Disk/IP 정보 수집"""
+        """인스턴스별 상세 CPU/Memory/Disk/IP/Tags 정보 수집"""
         instances_info = []
 
         try:
@@ -85,6 +85,14 @@ class GCPResourceCollector:
                         continue
                     
                     cpu_count, memory_gb = specs
+                
+                    # 태그(라벨) 정보 수집
+                    tags = {}
+                    if hasattr(instance, 'labels') and instance.labels:
+                        tags = dict(instance.labels)
+                        print(f"  Tags found: {tags}")
+                    else:
+                        print(f"  No tags found for {instance_name}")
                 
                     # IP 주소 정보 수집 (여러 가능한 속성명 시도)
                     private_ips = []
@@ -137,7 +145,8 @@ class GCPResourceCollector:
                         'memory_gb': memory_gb,
                         'private_ip': ', '.join(private_ips) if private_ips else 'None',
                         'public_ip': ', '.join(public_ips) if public_ips else 'None',
-                        'disks': disks_info
+                        'disks': disks_info,
+                        'tags': tags  # 태그 정보 추가
                     }
                 
                     instances_info.append(instance_data)
@@ -260,7 +269,7 @@ class GCPResourceCollector:
         return gcs_usage
 
 def save_to_excel_gcs(result_data, bucket_name=None):
-    """결과를 엑셀 파일로 GCS에 저장"""
+    """결과를 엑셀 파일로 GCS에 저장 (태그를 동적 컬럼으로 추가)"""
     if bucket_name is None:
         bucket_name = os.environ.get('BUCKET_NAME')
         if not bucket_name:
@@ -271,23 +280,38 @@ def save_to_excel_gcs(result_data, bucket_name=None):
         storage_client = storage.Client()
         bucket = storage_client.bucket(bucket_name)
         
+        # 1. 모든 인스턴스에서 사용된 태그 키들을 수집
+        all_tag_keys = set()
+        for instance in result_data['instances']:
+            if 'tags' in instance and instance['tags']:
+                all_tag_keys.update(instance['tags'].keys())
+        
+        # 태그 키들을 정렬하여 일관된 순서로 컬럼 생성
+        sorted_tag_keys = sorted(list(all_tag_keys))
+        print(f"Found tag keys: {sorted_tag_keys}")
+        
         # 데이터 정리
         all_data = []
         
-        # 헤더
-        headers = ['Category', 'Instance/Resource', 'Zone', 'Machine Type', 'Status', 
-          'CPU', 'Memory(GB)', 'Private IPs', 'Public IPs',
-          'PD-Standard(GB)', 'PD-Balanced(GB)', 'PD-SSD(GB)', 'Local-SSD(GB)']
+        # 2. 헤더 생성 (기본 컬럼 + 태그 컬럼들)
+        base_headers = ['Category', 'Instance/Resource', 'Zone', 'Machine Type', 'Status', 
+                       'CPU', 'Memory(GB)', 'Private IPs', 'Public IPs',
+                       'PD-Standard(GB)', 'PD-Balanced(GB)', 'PD-SSD(GB)', 'Local-SSD(GB)']
+        
+        # 태그 컬럼들을 헤더에 추가
+        headers = base_headers + sorted_tag_keys
         all_data.append(headers)
         
-        # 프로젝트 정보
-        all_data.append(['Project Info', result_data['project_id'], '', '', '', '', '', '', '', '', ''])
-        all_data.append(['Collection Time', result_data['timestamp'], '', '', '', '', '', '', '', '', ''])
-        all_data.append(['', '', '', '', '', '', '', '', '', '', ''])  # 빈 줄
+        # 프로젝트 정보 (태그 컬럼 개수만큼 빈 셀 추가)
+        empty_tag_cells = [''] * len(sorted_tag_keys)
+        all_data.append(['Project Info', result_data['project_id']] + [''] * 11 + empty_tag_cells)
+        all_data.append(['Collection Time', result_data['timestamp']] + [''] * 11 + empty_tag_cells)
+        all_data.append([''] * len(headers))  # 빈 줄
         
-        # 인스턴스별 상세 정보
+        # 3. 인스턴스별 상세 정보 (태그 값들 포함)
         for instance in result_data['instances']:
-            row = [
+            # 기본 정보
+            base_row = [
                 'Instance',
                 instance.get('name', 'unknown'),
                 instance.get('zone', ''),
@@ -302,19 +326,31 @@ def save_to_excel_gcs(result_data, bucket_name=None):
                 instance.get('disks', {}).get('pd-ssd', 0),
                 instance.get('disks', {}).get('local-ssd', 0)
             ]
+            
+            # 태그 값들 추가 (해당 키가 있으면 값을, 없으면 빈값을)
+            tag_values = []
+            instance_tags = instance.get('tags', {})
+            for tag_key in sorted_tag_keys:
+                tag_values.append(instance_tags.get(tag_key, ''))
+            
+            # 전체 행 생성
+            row = base_row + tag_values
             all_data.append(row)
         
-        all_data.append(['', '', '', '', '', '', '', '', '', '', ''])  # 빈 줄
+        all_data.append([''] * len(headers))  # 빈 줄
         
-        # 스냅샷
-        all_data.append(['Snapshot', 'Total Snapshots', '', '', '', '', 
-                        result_data['snapshot_total_gb'], '', '', '', ''])
-        all_data.append(['', '', '', '', '', '', '', '', '', '', ''])  # 빈 줄
+        # 스냅샷 (태그 컬럼만큼 빈 셀 추가)
+        snapshot_row = ['Snapshot', 'Total Snapshots', '', '', '', '', 
+                       result_data['snapshot_total_gb']] + [''] * 6 + empty_tag_cells
+        all_data.append(snapshot_row)
+        all_data.append([''] * len(headers))  # 빈 줄
         
-        # GCS Usage
-        all_data.append(['GCS', 'Bucket Name', 'Size(GB)', '', '', '', '', '', '', '', ''])
+        # GCS Usage (태그 컬럼만큼 빈 셀 추가)
+        gcs_header_row = ['GCS', 'Bucket Name', 'Size(GB)'] + [''] * 10 + empty_tag_cells
+        all_data.append(gcs_header_row)
         for bucket_name_item, size_gb in result_data['gcs_usage'].items():
-            all_data.append(['GCS', bucket_name_item, size_gb, '', '', '', '', '', '', '', ''])
+            gcs_row = ['GCS', bucket_name_item, size_gb] + [''] * 10 + empty_tag_cells
+            all_data.append(gcs_row)
         
         # DataFrame 생성 및 엑셀 저장
         df = pd.DataFrame(all_data)
@@ -330,6 +366,7 @@ def save_to_excel_gcs(result_data, bucket_name=None):
         blob.upload_from_file(excel_buffer, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         
         print(f"✓ 엑셀 파일 저장 완료: gs://{bucket_name}/{filename}")
+        print(f"✓ 태그 컬럼 추가됨: {sorted_tag_keys}")
         return filename
         
     except Exception as e:
